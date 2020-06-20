@@ -1,12 +1,12 @@
+'''Train CIFAR10 with PyTorch.'''
 from __future__ import print_function
-
 import os
+
 import time
 import torch
 import logging
 import argparse
 import torchvision
-#from models import *
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
@@ -14,7 +14,6 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 import torchvision
-# from my_pooling import my_MaxPool2d
 import torchvision.transforms as transforms
 
 import cv2
@@ -23,7 +22,7 @@ import cv2
 logging.basicConfig(level=logging.INFO)
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
-parser.add_argument('--exp_name', default='dc_tmp', type=str, help='store name')
+parser.add_argument('--exp_name', default='dc_birds_tmp', type=str, help='store name')
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
 
@@ -40,6 +39,7 @@ def setup_seed(seed):
 setup_seed(args.seed)
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+# vis = Visualizer(env="cars_new_adj_matrix_0406_2cls", port=8097, server="http://localhost")
 
 store_name = os.path.join("results", args.exp_name) 
 # setup output
@@ -49,7 +49,6 @@ exp_dir = store_name
 
 nb_epoch = 100
 PRINT_FREQ = 50
-
 
 try:
     os.stat(exp_dir)
@@ -90,12 +89,12 @@ transform_test = transforms.Compose([
 
 
 #trainset    = torchvision.datasets.ImageFolder(root='./train', transform=transform_train)
-trainset    = torchvision.datasets.ImageFolder(root='/data/dingyifeng/StandCars/train', transform=transform_train)
+trainset    = torchvision.datasets.ImageFolder(root='/data/changdongliang/Birds2/train', transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=2)
 
 
 #testset = torchvision.datasets.ImageFolder(root='./test', transform=transform_test)
-testset = torchvision.datasets.ImageFolder(root='/data/dingyifeng/StandCars/test', transform=transform_test)
+testset = torchvision.datasets.ImageFolder(root='/data/changdongliang/Birds2/test', transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=2)
 
 
@@ -107,10 +106,10 @@ print('==> Building model..')
 from model.resnet_dc import resnet18, resnet50 
 from model.vgg_dc import vgg16, vgg19 
 
-net = resnet50(num_classes=196)
+net = resnet50(num_classes=200)
 pretrained_path = "/home/dingyifeng/.torch/models/resnet50-19c8e357.pth"
 
-# net = vgg19(num_classes=196)
+# net = vgg19(num_classes=200)
 # pretrained_path = "/home/dingyifeng/.torch/models/vgg19_bn-c79401a0.pth"
 
 if pretrained_path:
@@ -156,10 +155,16 @@ def train(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
 
+        # min_val = torch.min(torch.min(heatmap_remain, -1, keepdim=True)[0], -1, keepdim=True)[0]
+        # max_val = torch.max(torch.max(heatmap_remain, -1, keepdim=True)[0], -1, keepdim=True)[0]
+        # heatmap_remain[heatmap_remain < (min_val+0.5*(max_val-min_val))] = 0
+
+        # min_val = torch.min(torch.min(heatmap_drop, -1, keepdim=True)[0], -1, keepdim=True)[0]
+        # max_val = torch.max(torch.max(heatmap_drop, -1, keepdim=True)[0], -1, keepdim=True)[0]
+        # heatmap_drop[heatmap_drop < (min_val+0.5*(max_val-min_val))] = 0
         if batch_idx % PRINT_FREQ == 0:
             vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
             vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
@@ -192,11 +197,11 @@ def test(epoch):
             _, predicted = torch.max(outputs.data, 1)
             total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
-
             if batch_idx % PRINT_FREQ == 0:
                 vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
                 cv2.imwrite('visual/test_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
+                
+                # heatmap_remain = 
                 vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
                 cv2.imwrite('visual/test_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
                 vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)

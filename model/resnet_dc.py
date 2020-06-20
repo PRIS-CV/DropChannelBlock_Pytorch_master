@@ -178,37 +178,45 @@ class ResNet(nn.Module):
         x: bs*c*h*w
         """
         if self.training:
-	        ### generate adj matrix
-	        bs, c, h, w = x.size()
-	        mask = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(x) #bs*c*h*w
-	        mask = mask.view(bs,c,-1)
-	        loc = torch.argmax(mask, dim=2) #bs*c
-	        loc_x = loc / w
-	        loc_y = loc - loc_x*w
-	        loc_xy = torch.cat((loc_x.unsqueeze(-1), loc_y.unsqueeze(-1)), -1).float()
-	        # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-	        mask_square = torch.sum(loc_xy*loc_xy, -1)
-	        dot_product = torch.bmm(loc_xy, torch.transpose(loc_xy, 1, 2))
+            ### generate adj matrix
+            bs, c, h, w = x.size()
+            mask = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(x) #bs*c*h*w
+            mask = mask.view(bs,c,-1)
+            loc = torch.argmax(mask, dim=2) #bs*c
+            loc_x = loc / w
+            loc_y = loc - loc_x*w
+            loc_xy = torch.cat((loc_x.unsqueeze(-1), loc_y.unsqueeze(-1)), -1).float()
+            # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
+            mask_square = torch.sum(loc_xy*loc_xy, -1)
+            dot_product = torch.bmm(loc_xy, torch.transpose(loc_xy, 1, 2))
 
-	        distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
-	        distances = -distances
+            distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
+            distances = -distances
 
-	        d_min = torch.min(distances, dim=-1, keepdim=True)[0]
-	        d_max = torch.max(distances, dim=-1, keepdim=True)[0]
+            d_min = torch.min(distances, dim=-1, keepdim=True)[0]
+            d_max = torch.max(distances, dim=-1, keepdim=True)[0]
 
-	        adjs = (distances - d_min) / (d_max - d_min)
+            adjs = (distances - d_min) / (d_max - d_min)
 
 	        ### drop function
-	        topk = int(c*drop_rate)
-	        value, indices = torch.topk(adjs, topk, dim = 2) # [bs, c, c] -> [bs, c, topk]
-	        value = value[:,:,-1].view(bs, c,-1)
-	        mask = adjs<value # [bs, c, c]
-	        drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(adjs.device).repeat(1,1,c).long()
-	        mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
-	        # normalize & set correlated feat to 0
-	        x = x* mask / (1-drop_rate)
+            topk = int(c*drop_rate)
+            value, indices = torch.topk(adjs, topk, dim = 2) # [bs, c, c] -> [bs, c, topk]
+            value = value[:,:,-1].view(bs, c,-1)
+            mask = adjs<value # [bs, c, c]
+            drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(adjs.device).repeat(1,1,c).long()
+            mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
 
-        return x
+            # get masked heatmap and remained heatmap for visualization
+            mask_remain = mask
+            mask_drop = 1 - mask_remain
+        
+            x_remain = x* mask_remain
+            x_drop = x* mask_drop
+
+            # normalize & set correlated feat to 0
+            x_out = x_remain / (1-drop_rate)
+
+        return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -220,7 +228,7 @@ class ResNet(nn.Module):
         x = self.layer1(x) #256
         # x = self.drop_channel_block(x) # add dc block v2
         x = self.layer2(x) #512 
-        x = self.drop_channel_block(x) # add dc block v3
+        x, heatmap_remain, heatmap_drop = self.drop_channel_block(x) # add dc block v3
         x = self.layer3(x) #1024
         # x = self.drop_channel_block(x) # add dc block v4
         x = self.layer4(x) #2048
@@ -230,7 +238,7 @@ class ResNet(nn.Module):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
 
-        return x
+        return x, heatmap_remain, heatmap_drop
 
 
 def resnet18(num_classes, **kwargs):
