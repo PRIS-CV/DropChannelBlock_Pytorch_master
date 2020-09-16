@@ -51,6 +51,10 @@ nb_epoch = 100
 PRINT_FREQ = 50
 
 try:
+    os.stat('visual')
+except:
+    os.makedirs('visual')
+try:
     os.stat(exp_dir)
 except:
     os.makedirs(exp_dir)
@@ -65,7 +69,6 @@ results_train_file.flush()
 results_test_file = open(exp_dir + '/results_test.csv', 'w')
 results_test_file.write('epoch, test_acc,test_loss\n')
 results_test_file.flush()
-
 
 
 use_cuda = torch.cuda.is_available()
@@ -87,14 +90,10 @@ transform_test = transforms.Compose([
 ])
 
 
-
-#trainset    = torchvision.datasets.ImageFolder(root='./train', transform=transform_train)
-trainset    = torchvision.datasets.ImageFolder(root='/data/changdongliang/Birds2/train', transform=transform_train)
+trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/train', transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=2)
 
-
-#testset = torchvision.datasets.ImageFolder(root='./test', transform=transform_test)
-testset = torchvision.datasets.ImageFolder(root='/data/changdongliang/Birds2/test', transform=transform_test)
+testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/test', transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=2)
 
 
@@ -107,7 +106,7 @@ from model.resnet_dc import resnet18, resnet50
 from model.vgg_dc import vgg16, vgg19 
 
 net = resnet50(num_classes=200)
-pretrained_path = "/home/dingyifeng/.torch/models/resnet50-19c8e357.pth"
+pretrained_path = "/home/donggua/.torch/models/resnet50-19c8e357.pth"
 
 # net = vgg19(num_classes=200)
 # pretrained_path = "/home/dingyifeng/.torch/models/vgg19_bn-c79401a0.pth"
@@ -140,12 +139,12 @@ def train(epoch):
         idx = batch_idx
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        optimizer.zero_grad()
         inputs, targets = Variable(inputs), Variable(targets)
-        outputs, heatmap_remain, heatmap_drop = net(inputs)
+        outputs, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = net(inputs)
 
         loss = criterion(outputs, targets)
 
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -155,20 +154,20 @@ def train(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
 
-        # min_val = torch.min(torch.min(heatmap_remain, -1, keepdim=True)[0], -1, keepdim=True)[0]
-        # max_val = torch.max(torch.max(heatmap_remain, -1, keepdim=True)[0], -1, keepdim=True)[0]
-        # heatmap_remain[heatmap_remain < (min_val+0.5*(max_val-min_val))] = 0
-
-        # min_val = torch.min(torch.min(heatmap_drop, -1, keepdim=True)[0], -1, keepdim=True)[0]
-        # max_val = torch.max(torch.max(heatmap_drop, -1, keepdim=True)[0], -1, keepdim=True)[0]
-        # heatmap_drop[heatmap_drop < (min_val+0.5*(max_val-min_val))] = 0
         if batch_idx % PRINT_FREQ == 0:
             vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            vis_heatmap_all = torchvision.utils.make_grid(heatmap_all, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_heatmap_all_{}.jpg'.format(batch_idx), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_heatmap_drop_{}.jpg'.format(batch_idx), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            vis_select_channel = torchvision.utils.make_grid(select_channel, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_select_channel_{}.jpg'.format(batch_idx), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+
+            vis_all_channel = torchvision.utils.make_grid(all_channel, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_all_channel_{}.jpg'.format(batch_idx), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
     train_acc = 100.*float(correct)/total
     train_loss = train_loss/(idx+1)
@@ -189,7 +188,7 @@ def test(epoch):
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
             inputs, targets = Variable(inputs), Variable(targets)
-            outputs, heatmap_remain, heatmap_drop = net(inputs)
+            outputs, heatmap, _, _, _, _ = net(inputs)
 
             loss = criterion(outputs, targets)
 
@@ -200,13 +199,8 @@ def test(epoch):
             if batch_idx % PRINT_FREQ == 0:
                 vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
                 cv2.imwrite('visual/test_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-                
-                # heatmap_remain = 
-                vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
-                cv2.imwrite('visual/test_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-                vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
-                cv2.imwrite('visual/test_heatmap_drop_{}.jpg'.format(batch_idx), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
+                vis_heatmap = torchvision.utils.make_grid(heatmap, nrow=8, padding=2,normalize=True)
+                cv2.imwrite('visual/test_heatmap_{}.jpg'.format(batch_idx), (vis_heatmap*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
         test_acc = 100.*float(correct)/total
         test_loss = test_loss/(idx+1)
         logging.info('Iteration %d, test_acc = %.4f,test_loss = %.4f' % (epoch, test_acc,test_loss))
@@ -226,26 +220,30 @@ def cosine_anneal_schedule(t):
 
 
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
+# optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+# scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 
-# optimizer = optim.SGD([
-#                         {'params': nn.Sequential(*list(net.children())[7:]).parameters(),   'lr': 0.001},
-#                         {'params': nn.Sequential(*list(net.children())[:7]).parameters(),   'lr': 0.0001}
-                        
-#                      ], 
-#                       momentum=0.9, weight_decay=5e-4)
-
+# adjust lr after insert position
+optimizer = optim.SGD([
+                        {'params': nn.Sequential(*list(net.children())[6:]).parameters(), 'lr': args.lr},
+                        {'params': nn.Sequential(*list(net.children())[:6]).parameters(), 'lr': args.lr/10}       
+                     ], 
+                      momentum=0.9, weight_decay=5e-4)
+def cosine_anneal_schedule(t):
+    cos_inner = np.pi * (t % (nb_epoch))
+    cos_inner /= (nb_epoch)
+    cos_out = np.cos(cos_inner) + 1
+    return float(args.lr / 2 * cos_out)
 
 max_val_acc = 0
 for epoch in range(0, nb_epoch):
-    scheduler.step(epoch)
-    # optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch) / 10
-    # optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch)
+    optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch)
+    optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch) / 10
     for param_group in optimizer.param_groups:
         print(param_group['lr'])
     train(epoch)
     val_acc = test(epoch)
+    # scheduler.step(epoch)
     if val_acc >max_val_acc:
         max_val_acc = val_acc
         # torch.save(net.state_dict(), store_name+'.pth')
