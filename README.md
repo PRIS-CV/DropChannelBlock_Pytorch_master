@@ -1,1 +1,1 @@
-# DropChannelBlock_Pytorch_master
+# ChannelDropBlock_Pytorch

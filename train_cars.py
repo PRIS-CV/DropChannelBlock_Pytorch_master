@@ -21,11 +21,15 @@ import cv2
 
 #from utils import progress_bar
 logging.basicConfig(level=logging.INFO)
-parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+
+model_options = ['resnet50', 'vgg19']
+parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
-parser.add_argument('--exp_name', default='dc_tmp', type=str, help='store name')
+parser.add_argument('--exp_name', default='baseline_cars', type=str, help='store name')
+parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
+parser.add_argument('--visualize', action='store_true', default=False)
 
 args = parser.parse_args()
 logging.info(args)
@@ -88,15 +92,11 @@ transform_test = transforms.Compose([
 ])
 
 
+trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/StandCars/train', transform=transform_train)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=4)
 
-#trainset    = torchvision.datasets.ImageFolder(root='./train', transform=transform_train)
-trainset    = torchvision.datasets.ImageFolder(root='/data/dingyifeng/StandCars/train', transform=transform_train)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=2)
-
-
-#testset = torchvision.datasets.ImageFolder(root='./test', transform=transform_test)
-testset = torchvision.datasets.ImageFolder(root='/data/dingyifeng/StandCars/test', transform=transform_test)
-testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=2)
+testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/StandCars/test', transform=transform_test)
+testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=4)
 
 
 # # Model
@@ -107,11 +107,12 @@ print('==> Building model..')
 from model.resnet_dc import resnet18, resnet50 
 from model.vgg_dc import vgg16, vgg19 
 
-net = resnet50(num_classes=196)
-pretrained_path = "/home/dingyifeng/.torch/models/resnet50-19c8e357.pth"
-
-# net = vgg19(num_classes=196)
-# pretrained_path = "/home/dingyifeng/.torch/models/vgg19_bn-c79401a0.pth"
+if args.model == "resnet50":
+    net = resnet50(num_classes=196)
+    pretrained_path = "/home/donggua/.torch/models/resnet50-19c8e357.pth"
+elif args.model == "vgg19":
+    net = vgg19(num_classes=196)
+    pretrained_path = "/home/donggua/.torch/models/vgg19_bn-c79401a0.pth"
 
 if pretrained_path:
     logging.info('load pretrained backbone')
@@ -156,14 +157,20 @@ def train(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets.data).cpu().sum()
 
-        if batch_idx % PRINT_FREQ == 0:
+        if batch_idx % PRINT_FREQ == 0 and args.visualize:
             vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
+            vis_heatmap_all = torchvision.utils.make_grid(heatmap_all, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_heatmap_all_{}.jpg'.format(batch_idx), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
             cv2.imwrite('visual/train_heatmap_drop_{}.jpg'.format(batch_idx), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            vis_select_channel = torchvision.utils.make_grid(select_channel, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_select_channel_{}.jpg'.format(batch_idx), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+
+            vis_all_channel = torchvision.utils.make_grid(all_channel, nrow=8, padding=2,normalize=True)
+            cv2.imwrite('visual/train_all_channel_{}.jpg'.format(batch_idx), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
     train_acc = 100.*float(correct)/total
     train_loss = train_loss/(idx+1)
@@ -193,15 +200,11 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
 
-            if batch_idx % PRINT_FREQ == 0:
+            if batch_idx % PRINT_FREQ == 0 and args.visualize:
                 vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
                 cv2.imwrite('visual/test_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
-                vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
-                cv2.imwrite('visual/test_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-                vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
-                cv2.imwrite('visual/test_heatmap_drop_{}.jpg'.format(batch_idx), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
+                vis_heatmap = torchvision.utils.make_grid(heatmap, nrow=8, padding=2,normalize=True)
+                cv2.imwrite('visual/test_heatmap_{}.jpg'.format(batch_idx), (vis_heatmap*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
         test_acc = 100.*float(correct)/total
         test_loss = test_loss/(idx+1)
         logging.info('Iteration %d, test_acc = %.4f,test_loss = %.4f' % (epoch, test_acc,test_loss))
@@ -209,16 +212,6 @@ def test(epoch):
         results_test_file.flush()
 
     return test_acc
- 
-
-
-
-def cosine_anneal_schedule(t):
-    cos_inner = np.pi * (t % (nb_epoch  )) 
-    cos_inner /= (nb_epoch )
-    cos_out = np.cos(cos_inner) + 1
-    return float( 0.001 / 2 * cos_out)
-
 
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
@@ -231,19 +224,25 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 #                      ], 
 #                       momentum=0.9, weight_decay=5e-4)
 
+# def cosine_anneal_schedule(t):
+#     cos_inner = np.pi * (t % (nb_epoch))
+#     cos_inner /= (nb_epoch)
+#     cos_out = np.cos(cos_inner) + 1
+#     return float(args.lr / 2 * cos_out)
 
 max_val_acc = 0
 for epoch in range(0, nb_epoch):
-    scheduler.step(epoch)
     # optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch) / 10
     # optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch)
     for param_group in optimizer.param_groups:
         print(param_group['lr'])
     train(epoch)
     val_acc = test(epoch)
+    scheduler.step(epoch)
     if val_acc >max_val_acc:
         max_val_acc = val_acc
         # torch.save(net.state_dict(), store_name+'.pth')
+    print('max_val_acc=', max_val_acc)
 
 # torch.cuda.empty_cache()
 # os.system('python /home/dingyifeng/utils/train.py --gpu {}'.format(args.gpu)) 

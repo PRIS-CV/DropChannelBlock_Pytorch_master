@@ -173,97 +173,55 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    # ### strategy1: drop with fixed rate ###
-    # def drop_channel_block(self, x, drop_rate=0.1):
-    #     """
-    #     x: bs*c*h*w
-    #     """
-    #     if self.training:
-    #         ### generate correlation matrix
-    #         bs, c, h, w = x.size()
-    #         mask = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(x) #bs*c*h*w
-    #         mask = mask.view(bs,c,-1)
-    #         loc = torch.argmax(mask, dim=2) #bs*c
-    #         loc_x = loc / w
-    #         loc_y = loc - loc_x*w
-    #         loc_xy = torch.cat((loc_x.unsqueeze(-1), loc_y.unsqueeze(-1)), -1).float()
-    #         # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-    #         mask_square = torch.sum(loc_xy*loc_xy, -1)
-    #         dot_product = torch.bmm(loc_xy, torch.transpose(loc_xy, 1, 2))
+    ### strategy1: cal correlation based on Euclidean distance ###
+    def drop_channel_block_s1(self, x, drop_rate=0.2):
+        """
+        x: bs*c*h*w
+        """
+        if self.training:
+            ### generate correlation matrix
+            bs, c, h, w = x.size()
+            mask = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(x) #bs*c*h*w
+            mask = mask.view(bs,c,-1)
+            loc = torch.argmax(mask, dim=2) #bs*c
+            loc_x = loc / w
+            loc_y = loc - loc_x*w
+            loc_xy = torch.cat((loc_x.unsqueeze(-1), loc_y.unsqueeze(-1)), -1).float()
+            # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
+            mask_square = torch.sum(loc_xy*loc_xy, -1)
+            dot_product = torch.bmm(loc_xy, torch.transpose(loc_xy, 1, 2))
 
-    #         distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
-    #         distances = torch.sqrt(distances)
+            distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
+            distances = torch.sqrt(distances)
 
-    #         distances = -distances
-    #         d_min = torch.min(distances, dim=-1, keepdim=True)[0]
-    #         d_max = torch.max(distances, dim=-1, keepdim=True)[0]
-    #         adjs = (distances - d_min) / (d_max - d_min)
-    #         ### drop function
-    #         topk = int(c*drop_rate)
-    #         value, indices = torch.topk(adjs, topk, dim = 2) # [bs, c, c] -> [bs, c, topk]
-    #         value = value[:,:,-1].view(bs, c, -1)
-    #         mask = adjs < value # [bs, c, c]
+            distances = -distances
+            d_min = torch.min(distances, dim=-1, keepdim=True)[0]
+            d_max = torch.max(distances, dim=-1, keepdim=True)[0]
+            adjs = (distances - d_min) / (d_max - d_min)
+            ### drop function
+            topk = int(c*drop_rate)
+            value, indices = torch.topk(adjs, topk, dim = 2) # [bs, c, c] -> [bs, c, topk]
+            value = value[:,:,-1].view(bs, c, -1)
+            mask = adjs < value # [bs, c, c]
 
-    #         drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(distances.device).repeat(1,1,c).long()
-    #         mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
+            drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(distances.device).repeat(1,1,c).long()
+            mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
 
-    #         ### get masked heatmap and remained heatmap for visualization
-    #         mask_remain = mask
-    #         mask_drop = 1 - mask_remain
-    #         x_remain = x* mask_remain
-    #         x_drop = x* mask_drop
-    #         x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
-    #         ### normalize
-    #         x_out = x_remain / (1-drop_rate)
+            ### get masked heatmap and remained heatmap for visualization
+            mask_remain = mask
+            mask_drop = 1 - mask_remain
+            x_remain = x* mask_remain
+            x_drop = x* mask_drop
+            x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
+            ### normalize
+            x_out = x_remain / (1-drop_rate)
 
-    #         return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
-    #     else:
-    #         return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
+            return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
+        else:
+            return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
 
-    # ### strategy2: drop with fixed distance ###
-    # def drop_channel_block(self, x, thr_rate=1/6):
-    #     """
-    #     x: bs*c*h*w
-    #     """
-    #     if self.training:
-    #         ### generate correlation matrix
-    #         bs, c, h, w = x.size()
-    #         mask = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(x) #bs*c*h*w
-    #         mask = mask.view(bs,c,-1)
-    #         loc = torch.argmax(mask, dim=2) #bs*c
-    #         loc_x = loc / w
-    #         loc_y = loc - loc_x*w
-    #         loc_xy = torch.cat((loc_x.unsqueeze(-1), loc_y.unsqueeze(-1)), -1).float()
-    #         # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-    #         mask_square = torch.sum(loc_xy*loc_xy, -1)
-    #         dot_product = torch.bmm(loc_xy, torch.transpose(loc_xy, 1, 2))
-
-    #         distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
-    #         distances = torch.sqrt(distances)
-
-    #         ### drop function
-    #         drop_thr = w*thr_rate
-    #         mask = distances > drop_thr
-
-    #         drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(distances.device).repeat(1,1,c).long()
-    #         mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
-
-    #         ### get masked heatmap and remained heatmap for visualization
-    #         mask_remain = mask
-    #         mask_drop = 1 - mask_remain
-        
-    #         x_remain = x* mask_remain
-    #         x_drop = x* mask_drop
-    #         x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
-    #         ### normalize
-    #         x_out = x_remain / (torch.sum(mask[:,:,:1,:1], dim=1, keepdim=True) / mask.size(1))
-
-    #         return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
-    #     else:
-    #         return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
-
-    ### strategy3: drop based on BP ###
-    def drop_channel_block(self, x, drop_rate=0.05):
+    ### strategy2: cal correlation based on BP ###
+    def drop_channel_block_s2(self, x, drop_rate=0.05):
         """
         x: bs*c*h*w
         """
@@ -309,7 +267,8 @@ class ResNet(nn.Module):
         x = self.layer1(x) #256
         # x = self.drop_channel_block(x) # add dc block v2
         x = self.layer2(x) #512 
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block(x) # add dc block v3
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
+        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x) # add dc block v3
         x = self.layer3(x) #1024
         # x = self.drop_channel_block(x) # add dc block v4
         x = self.layer4(x) #2048
@@ -320,7 +279,6 @@ class ResNet(nn.Module):
         x = self.classifier(x)
 
         return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
-        # return x, [], [], [], [], []
 
 
 def resnet18(num_classes, **kwargs):

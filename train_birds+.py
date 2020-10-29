@@ -23,11 +23,16 @@ import cv2
 
 #from utils import progress_bar
 logging.basicConfig(level=logging.INFO)
+
+model_options = ['resnet50', 'vgg19']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
-parser.add_argument('--exp_name', default='baseline_birds', type=str, help='store name')
+parser.add_argument('--exp_name', default='baseline_birds+', type=str, help='store name')
+parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
+parser.add_argument('--visualize', action='store_true', default=False)
+
 
 args = parser.parse_args()
 logging.info(args)
@@ -103,15 +108,17 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, 
 print('==> Building model..')
 
 from model.ResNetBase import ResNetBase
-shutil.copy2(os.path.join('model', 'ResNetBase.py'), exp_dir)
-net = ResNetBase(model_name="resnet50", num_classes=200, pretrained=True)
+from model.VGGBase import VGGBase
+if args.model == "resnet50":
+    shutil.copy2(os.path.join('model', 'ResNetBase.py'), exp_dir)
+    net = ResNetBase(model_name="resnet50", num_classes=200, pretrained=True)
+elif args.model == "vgg19":
+    shutil.copy2(os.path.join('model', 'VGGBase.py'), exp_dir)
+    net = VGGBase(model_name="resnet50", num_classes=200, pretrained=True)
 
 if use_cuda:
     net.cuda()
     cudnn.benchmark = True
-    # device = torch.device("cuda:0,1")
-    # net.to(device)
-    # netp = torch.nn.DataParallel(net, device_ids=[0,1])
 
 criterion = nn.CrossEntropyLoss()
 
@@ -163,19 +170,20 @@ def train(train_loader, model, criterion, optimizer, epoch):
                       data_time=data_time, loss=losses, acc=acc)
             logging.info(msg)
 
-            vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_inputs_{}.jpg'.format(i)), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-            vis_heatmap_all = torchvision.utils.make_grid(heatmap_all, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_all_{}.jpg'.format(i)), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-            vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_remain_{}.jpg'.format(i)), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-            vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_drop_{}.jpg'.format(i)), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-            vis_select_channel = torchvision.utils.make_grid(select_channel, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_select_channel_{}.jpg'.format(i)), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            if args.visualize:
+                vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_inputs_{}.jpg'.format(i)), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+                vis_heatmap_all = torchvision.utils.make_grid(heatmap_all, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_heatmap_all_{}.jpg'.format(i)), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+                vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_heatmap_remain_{}.jpg'.format(i)), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+                vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_heatmap_drop_{}.jpg'.format(i)), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+                vis_select_channel = torchvision.utils.make_grid(select_channel, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_select_channel_{}.jpg'.format(i)), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
-            vis_all_channel = torchvision.utils.make_grid(all_channel, nrow=8, padding=2,normalize=True)
-            cv2.imwrite(os.path.join(save_dir, 'train_all_channel_{}.jpg'.format(i)), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+                vis_all_channel = torchvision.utils.make_grid(all_channel, nrow=8, padding=2,normalize=True)
+                cv2.imwrite(os.path.join(save_dir, 'train_all_channel_{}.jpg'.format(i)), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
     results_train_file.write('%d, %.4f, %.4f\n' % (epoch, acc.avg, losses.avg))
     results_train_file.flush()
@@ -198,12 +206,11 @@ def validate(val_loader, model, epoch):
             correct = predicted.eq(targets.data).cpu().sum().item()
             acc.update(100.*float(correct)/inputs.size(0), inputs.size(0))
 
-            if i % PRINT_FREQ == 0:
+            if i % PRINT_FREQ == 0 and args.visualize:
                 vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
                 cv2.imwrite(os.path.join(save_dir, 'test_inputs_{}.jpg'.format(i)), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
                 vis_heatmap = torchvision.utils.make_grid(heatmap, nrow=8, padding=2,normalize=True)
                 cv2.imwrite(os.path.join(save_dir, 'test_heatmap_{}.jpg'.format(i)), (vis_heatmap*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
-
 
     msg = 'Epoch: [{0}][{1}/{2}]\t' \
         'Accuracy3 {acc.val:.3f} ({acc.avg:.3f})'.format(

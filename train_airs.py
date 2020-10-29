@@ -1,12 +1,12 @@
-'''Train CIFAR10 with PyTorch.'''
 from __future__ import print_function
-import os
 
+import os
 import time
 import torch
 import logging
 import argparse
 import torchvision
+#from models import *
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 import torchvision
+# from my_pooling import my_MaxPool2d
 import torchvision.transforms as transforms
 
 import cv2
@@ -24,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 model_options = ['resnet50', 'vgg19']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
 parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
-parser.add_argument('--exp_name', default='baseline_birds', type=str, help='store name')
+parser.add_argument('--exp_name', default='baseline_airs', type=str, help='store name')
 parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
@@ -43,7 +44,6 @@ def setup_seed(seed):
 setup_seed(args.seed)
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-# vis = Visualizer(env="cars_new_adj_matrix_0406_2cls", port=8097, server="http://localhost")
 
 store_name = os.path.join("results", args.exp_name) 
 # setup output
@@ -54,10 +54,7 @@ exp_dir = store_name
 nb_epoch = 100
 PRINT_FREQ = 50
 
-try:
-    os.stat('visual')
-except:
-    os.makedirs('visual')
+
 try:
     os.stat(exp_dir)
 except:
@@ -73,6 +70,7 @@ results_train_file.flush()
 results_test_file = open(exp_dir + '/results_test.csv', 'w')
 results_test_file.write('epoch, test_acc,test_loss\n')
 results_test_file.flush()
+
 
 
 use_cuda = torch.cuda.is_available()
@@ -94,10 +92,10 @@ transform_test = transforms.Compose([
 ])
 
 
-trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/train', transform=transform_train)
+trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Aircraft/train', transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=4)
 
-testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/test', transform=transform_test)
+testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Aircraft/test', transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=4)
 
 
@@ -110,10 +108,10 @@ from model.resnet_dc import resnet18, resnet50
 from model.vgg_dc import vgg16, vgg19 
 
 if args.model == "resnet50":
-    net = resnet50(num_classes=200)
+    net = resnet50(num_classes=100)
     pretrained_path = "/home/donggua/.torch/models/resnet50-19c8e357.pth"
 elif args.model == "vgg19":
-    net = vgg19(num_classes=200)
+    net = vgg19(num_classes=100)
     pretrained_path = "/home/donggua/.torch/models/vgg19_bn-c79401a0.pth"
 
 if pretrained_path:
@@ -144,12 +142,12 @@ def train(epoch):
         idx = batch_idx
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
+        optimizer.zero_grad()
         inputs, targets = Variable(inputs), Variable(targets)
-        outputs, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = net(inputs)
+        outputs, heatmap_remain, heatmap_drop = net(inputs)
 
         loss = criterion(outputs, targets)
 
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -193,7 +191,7 @@ def test(epoch):
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
             inputs, targets = Variable(inputs), Variable(targets)
-            outputs, heatmap, _, _, _, _ = net(inputs)
+            outputs, heatmap_remain, heatmap_drop = net(inputs)
 
             loss = criterion(outputs, targets)
 
@@ -201,6 +199,7 @@ def test(epoch):
             _, predicted = torch.max(outputs.data, 1)
             total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
+
             if batch_idx % PRINT_FREQ == 0 and args.visualize:
                 vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
                 cv2.imwrite('visual/test_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
@@ -215,16 +214,16 @@ def test(epoch):
     return test_acc
 
 
-
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 
-# # adjust lr after insert position
 # optimizer = optim.SGD([
-#                         {'params': nn.Sequential(*list(net.children())[6:]).parameters(), 'lr': args.lr},
-#                         {'params': nn.Sequential(*list(net.children())[:6]).parameters(), 'lr': args.lr/10}       
+#                         {'params': nn.Sequential(*list(net.children())[7:]).parameters(),   'lr': 0.001},
+#                         {'params': nn.Sequential(*list(net.children())[:7]).parameters(),   'lr': 0.0001}
+                        
 #                      ], 
 #                       momentum=0.9, weight_decay=5e-4)
+
 # def cosine_anneal_schedule(t):
 #     cos_inner = np.pi * (t % (nb_epoch))
 #     cos_inner /= (nb_epoch)
@@ -233,8 +232,8 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 
 max_val_acc = 0
 for epoch in range(0, nb_epoch):
-    # optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch)
-    # optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch) / 10
+    # optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch) / 10
+    # optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch)
     for param_group in optimizer.param_groups:
         print(param_group['lr'])
     train(epoch)
