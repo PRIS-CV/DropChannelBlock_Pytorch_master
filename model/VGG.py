@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 try:
     from torch.hub import load_state_dict_from_url
@@ -27,6 +28,16 @@ class VGG(nn.Module):
     def __init__(self, features, num_classes=1000, init_weights=True):
         super(VGG, self).__init__()
         self.features = features
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
+        self.classifier = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, num_classes),
+        )
         if init_weights:
             self._initialize_weights()
 
@@ -73,10 +84,10 @@ class VGG(nn.Module):
             ### normalize
             x_out = x_remain / (1-drop_rate)
 
-            return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
+            return x_out, torch.sum(x, dim=1, keepdim=True), torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel, x[0].unsqueeze(1)
         else:
-            return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
-
+            return x, torch.sum(x, dim=1, keepdim=True), [], [], [], []
+            
     ### strategy2: cal correlation based on BP ###
     def drop_channel_block_s2(self, x, drop_rate=0.05):
         """
@@ -127,7 +138,8 @@ class VGG(nn.Module):
         x = nn.Sequential(*list(self.features.children())[40:])(x) #[512,14,14]
         # x = self.drop_channel_block(x) # add dc block v5
 
-        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        return x, [], [], [], [], []
 
     def _initialize_weights(self):
         for m in self.modules():

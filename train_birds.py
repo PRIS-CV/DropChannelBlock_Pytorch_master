@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 
 model_options = ['resnet50', 'vgg19']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
-parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
+# parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
 parser.add_argument('--exp_name', default='baseline_birds', type=str, help='store name')
 parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
@@ -85,12 +85,14 @@ transform_train = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ])
 
 transform_test = transforms.Compose([
     transforms.Scale((448,448)),
     transforms.ToTensor(),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ])
 
 
@@ -112,9 +114,11 @@ from model.vgg_dc import vgg16, vgg19
 if args.model == "resnet50":
     net = resnet50(num_classes=200)
     pretrained_path = "/home/donggua/.torch/models/resnet50-19c8e357.pth"
+    init_lr = 0.001
 elif args.model == "vgg19":
     net = vgg19(num_classes=200)
     pretrained_path = "/home/donggua/.torch/models/vgg19_bn-c79401a0.pth"
+    init_lr = 0.01
 
 if pretrained_path:
     logging.info('load pretrained backbone')
@@ -216,7 +220,7 @@ def test(epoch):
 
 
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+optimizer = optim.SGD(net.parameters(), lr=init_lr, momentum=0.9, weight_decay=5e-4)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 
 # # adjust lr after insert position
@@ -229,7 +233,7 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=nb_epoch)
 #     cos_inner = np.pi * (t % (nb_epoch))
 #     cos_inner /= (nb_epoch)
 #     cos_out = np.cos(cos_inner) + 1
-#     return float(args.lr / 2 * cos_out)
+#     return float(init_lr / 2 * cos_out)
 
 max_val_acc = 0
 for epoch in range(0, nb_epoch):

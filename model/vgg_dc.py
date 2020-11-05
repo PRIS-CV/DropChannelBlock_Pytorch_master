@@ -65,10 +65,9 @@ class VGG(nn.Module):
             ### normalize
             x_out = x_remain / (1-drop_rate)
 
-            return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
+            return x_out, torch.sum(x, dim=1, keepdim=True), torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel, x[0].unsqueeze(1)
         else:
-            return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
-
+            return x, torch.sum(x, dim=1, keepdim=True), [], [], [], []
     ### strategy2: cal correlation based on BP ###
     def drop_channel_block_s2(self, x, drop_rate=0.05):
         """
@@ -105,17 +104,14 @@ class VGG(nn.Module):
         else:
             return x, torch.sum(x, dim=1, keepdim=True), [], [], [], []
 
-        return x
-
     def forward(self, x):
         #[3,448,448]
         x = nn.Sequential(*list(self.features.children())[:7])(x) #[64,224,224]
         # x = self.drop_channel_block(x) # add dc block v1
         x = nn.Sequential(*list(self.features.children())[7:14])(x) #[128,112,112]
-        # x = self.drop_channel_block(x) # add dc block v2
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v2
         x = nn.Sequential(*list(self.features.children())[14:27])(x) #[256,56,56]
         x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
-        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x) # add dc block v3
         x = nn.Sequential(*list(self.features.children())[27:40])(x) #[512,28,28]
         # x = self.drop_channel_block(x) # add dc block v4
         x = nn.Sequential(*list(self.features.children())[40:])(x) #[512,14,14]
@@ -124,7 +120,8 @@ class VGG(nn.Module):
         x = self.avgpool(x) #[512,7,7]
         x = torch.flatten(x, 1)
         x = self.cls(x)
-        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        return x, [], [], [], [], []
 
     def _initialize_weights(self):
         for m in self.modules():

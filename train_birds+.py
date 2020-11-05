@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 
 model_options = ['resnet50', 'vgg19']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
-parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
+# parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
 parser.add_argument('--exp_name', default='baseline_birds+', type=str, help='store name')
 parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
@@ -49,7 +49,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 exp_dir = os.path.join("results", args.exp_name) 
 
 nb_epoch = 200
-init_lr = 0.002
+# init_lr = 0.002
 PRINT_FREQ = 50
 
 try:
@@ -87,6 +87,7 @@ transform_train = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     # Cutout(n_holes=1, length=112),
 ])
 
@@ -95,6 +96,7 @@ transform_test = transforms.Compose([
     transforms.CenterCrop(448),
     transforms.ToTensor(),
     transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+    # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ])
 
 trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/train', transform=transform_train)
@@ -112,9 +114,11 @@ from model.VGGBase import VGGBase
 if args.model == "resnet50":
     shutil.copy2(os.path.join('model', 'ResNetBase.py'), exp_dir)
     net = ResNetBase(model_name="resnet50", num_classes=200, pretrained=True)
+    init_lr = 0.002
 elif args.model == "vgg19":
     shutil.copy2(os.path.join('model', 'VGGBase.py'), exp_dir)
     net = VGGBase(model_name="resnet50", num_classes=200, pretrained=True)
+    init_lr = 0.02
 
 if use_cuda:
     net.cuda()
@@ -227,14 +231,22 @@ def cosine_anneal_schedule(t, nb_epoch, lr):
     cos_out = np.cos(cos_inner) + 1
     return float( lr / 2 * cos_out)
 
-base_params = list(map(id, net.resnet.parameters()))
-logits_params = filter(lambda p: id(p) not in base_params, net.parameters())
-optimizer = optim.SGD([
-                        {'params': logits_params, 'lr': init_lr},
-                        {'params': net.resnet.parameters(), 'lr': init_lr / 10}
-                     ], 
-                      momentum=0.9, weight_decay=5e-4)
-
+if args.model == "resnet50":
+    base_params = list(map(id, net.resnet.parameters()))
+    logits_params = filter(lambda p: id(p) not in base_params, net.parameters())
+    optimizer = optim.SGD([
+                            {'params': logits_params, 'lr': init_lr},
+                            {'params': net.resnet.parameters(), 'lr': init_lr / 10}
+                        ], 
+                        momentum=0.9, weight_decay=5e-4)
+elif args.model == "vgg19":
+    base_params = list(map(id, net.vgg.parameters()))
+    logits_params = filter(lambda p: id(p) not in base_params, net.parameters())
+    optimizer = optim.SGD([
+                            {'params': logits_params, 'lr': init_lr},
+                            {'params': net.vgg.parameters(), 'lr': init_lr / 10}
+                        ], 
+                        momentum=0.9, weight_decay=5e-4)
 max_val_acc = 0
 for epoch in range(0, nb_epoch):
     optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch, nb_epoch, init_lr)

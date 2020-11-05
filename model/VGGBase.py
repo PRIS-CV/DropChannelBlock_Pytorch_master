@@ -28,7 +28,7 @@ class VGGBase(nn.Module):
         )
 
     def forward(self, x):
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.resnet(x)
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.vgg(x)
         out = self.cls(x)
 
         return out, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel

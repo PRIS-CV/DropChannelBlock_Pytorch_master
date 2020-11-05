@@ -216,9 +216,9 @@ class ResNet(nn.Module):
             ### normalize
             x_out = x_remain / (1-drop_rate)
 
-            return x_out, torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel
+            return x_out, torch.sum(x, dim=1, keepdim=True), torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel, x[0].unsqueeze(1)
         else:
-            return x, torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True), torch.sum(x, dim=1, keepdim=True)
+            return x, torch.sum(x, dim=1, keepdim=True), [], [], [], []
 
     ### strategy2: cal correlation based on BP ###
     def drop_channel_block_s2(self, x, drop_rate=0.05):
@@ -265,10 +265,9 @@ class ResNet(nn.Module):
         
         # x = self.drop_channel_block(x) # add dc block v1
         x = self.layer1(x) #256
-        # x = self.drop_channel_block(x) # add dc block v2
+        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v2
         x = self.layer2(x) #512 
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
-        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x) # add dc block v3
+        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
         x = self.layer3(x) #1024
         # x = self.drop_channel_block(x) # add dc block v4
         x = self.layer4(x) #2048
@@ -278,7 +277,8 @@ class ResNet(nn.Module):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
 
-        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+        return x, [], [], [], [], []
 
 
 def resnet18(num_classes, **kwargs):
