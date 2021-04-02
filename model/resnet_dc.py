@@ -98,7 +98,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, num_classes, block, layers, zero_init_residual=False,
+    def __init__(self, num_classes, block, layers, cdb_flag, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,
                  norm_layer=None):
         super(ResNet, self).__init__()
@@ -106,6 +106,7 @@ class ResNet(nn.Module):
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
+        self.cdb_flag = cdb_flag
         self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
@@ -194,6 +195,7 @@ class ResNet(nn.Module):
             distances = mask_square.unsqueeze(2) - 2.0*dot_product + mask_square.unsqueeze(1)
             distances = torch.sqrt(distances)
 
+            # drop with fixed percentage
             distances = -distances
             d_min = torch.min(distances, dim=-1, keepdim=True)[0]
             d_max = torch.max(distances, dim=-1, keepdim=True)[0]
@@ -204,6 +206,10 @@ class ResNet(nn.Module):
             value = value[:,:,-1].view(bs, c, -1)
             mask = adjs < value # [bs, c, c]
 
+            # ## drop with threshold
+            # value = h * 0.2
+            # mask = distances > value
+
             drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(distances.device).repeat(1,1,c).long()
             mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
 
@@ -213,8 +219,13 @@ class ResNet(nn.Module):
             x_remain = x* mask_remain
             x_drop = x* mask_drop
             x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
-            ### normalize
+
+            ## normalize: drop with fixed percentage
             x_out = x_remain / (1-drop_rate)
+
+            # ### normalize: drop with threshold
+            # remain_rate = torch.sum(mask_remain) / (bs*c*h*w)
+            # x_out = x_remain / remain_rate
 
             return x_out, torch.sum(x, dim=1, keepdim=True), torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel, x[0].unsqueeze(1)
         else:
@@ -263,64 +274,33 @@ class ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x) #64
         
-        # x = self.drop_channel_block(x) # add dc block v1
         x = self.layer1(x) #256
-        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v2
+        # add dc block v2
+        if self.cdb_flag == "max_activation":
+            x, _, _, _, _, _ = self.drop_channel_block_s1(x)
+        elif self.cdb_flag == "bilinear_pooling":
+            x, _, _, _, _, _ = self.drop_channel_block_s2(x)
         x = self.layer2(x) #512 
-        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
+        # add dc block v3
+        if self.cdb_flag == "max_activation":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
+        elif self.cdb_flag == "bilinear_pooling":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
+        else:
+            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], []
         x = self.layer3(x) #1024
-        # x = self.drop_channel_block(x) # add dc block v4
         x = self.layer4(x) #2048
-        # x = self.drop_channel_block(x) # add dc block v5
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
 
-        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
-        return x, [], [], [], [], []
+        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
 
-
-def resnet18(num_classes, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, BasicBlock, [2, 2, 2, 2], **kwargs)
-    return model
-
-
-def resnet34(num_classes, **kwargs):
-    """Constructs a ResNet-34 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, BasicBlock, [3, 4, 6, 3], **kwargs)
-    return model
-
-
-def resnet50(num_classes, **kwargs):
+def resnet50(num_classes, cdb_flag, **kwargs):
     """Constructs a ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(num_classes, Bottleneck, [3, 4, 6, 3], **kwargs)
-    return model
-
-
-def resnet101(num_classes, **kwargs):
-    """Constructs a ResNet-101 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, Bottleneck, [3, 4, 23, 3], **kwargs)
-    return model
-
-
-def resnet152(num_classes, **kwargs):
-    """Constructs a ResNet-152 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, Bottleneck, [3, 8, 36, 3], **kwargs)
+    model = ResNet(num_classes, Bottleneck, [3, 4, 6, 3], cdb_flag, **kwargs)
     return model

@@ -22,10 +22,12 @@ import cv2
 logging.basicConfig(level=logging.INFO)
 
 model_options = ['resnet50', 'vgg19']
+cdb_options = ['none', 'max_activation', 'bilinear_pooling']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
 # parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
 parser.add_argument('--exp_name', default='baseline_birds', type=str, help='store name')
-parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
+parser.add_argument('--model', default='resnet50', type=str, choices=model_options, help='backbone model')
+parser.add_argument('--cdb', default='none', type=str, choices=cdb_options, help='ChannelDropBlock strategy')
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
 parser.add_argument('--visualize', action='store_true', default=False)
@@ -43,8 +45,6 @@ def setup_seed(seed):
 setup_seed(args.seed)
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-# vis = Visualizer(env="cars_new_adj_matrix_0406_2cls", port=8097, server="http://localhost")
-
 store_name = os.path.join("results", args.exp_name) 
 # setup output
 time_str = time.strftime("%m-%d-%H-%M", time.localtime())
@@ -54,10 +54,17 @@ exp_dir = store_name
 nb_epoch = 100
 PRINT_FREQ = 50
 
-try:
-    os.stat('visual')
-except:
-    os.makedirs('visual')
+if args.visualize:
+    try:
+        os.stat('visual')
+    except:
+        os.makedirs('visual')
+    save_dir = os.path.join('visual', args.exp_name)
+    try:
+        os.stat(save_dir)
+    except:
+        os.makedirs(save_dir)
+    
 try:
     os.stat(exp_dir)
 except:
@@ -96,10 +103,10 @@ transform_test = transforms.Compose([
 ])
 
 
-trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/train', transform=transform_train)
+trainset    = torchvision.datasets.ImageFolder(root='data/birds/train', transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=4)
 
-testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/test', transform=transform_test)
+testset = torchvision.datasets.ImageFolder(root='data/birds/test', transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=4)
 
 
@@ -108,16 +115,16 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, 
 print('==> Building model..')
 
 
-from model.resnet_dc import resnet18, resnet50 
-from model.vgg_dc import vgg16, vgg19 
+from model.resnet_dc import resnet50 
+from model.vgg_dc import vgg19 
 
 if args.model == "resnet50":
-    net = resnet50(num_classes=200)
-    pretrained_path = "/home/donggua/.torch/models/resnet50-19c8e357.pth"
+    net = resnet50(num_classes=200, cdb_flag=args.cdb)
+    pretrained_path = os.path.join(os.path.expanduser('~'), ".torch/models/resnet50-19c8e357.pth")
     init_lr = 0.001
 elif args.model == "vgg19":
-    net = vgg19(num_classes=200)
-    pretrained_path = "/home/donggua/.torch/models/vgg19_bn-c79401a0.pth"
+    net = vgg19(num_classes=200, cdb_flag=args.cdb)
+    pretrained_path = os.path.join(os.path.expanduser('~'), ".torch/models/vgg19_bn-c79401a0.pth")
     init_lr = 0.01
 
 if pretrained_path:
@@ -165,18 +172,18 @@ def train(epoch):
 
         if batch_idx % PRINT_FREQ == 0 and args.visualize:
             vis_input = torchvision.utils.make_grid(inputs, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_inputs_{}.jpg'.format(batch_idx), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_inputs_{}.jpg'.format(i)), (vis_input*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_all = torchvision.utils.make_grid(heatmap_all, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_heatmap_all_{}.jpg'.format(batch_idx), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_all_{}.jpg'.format(i)), (vis_heatmap_all*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_remain = torchvision.utils.make_grid(heatmap_remain, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_heatmap_remain_{}.jpg'.format(batch_idx), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_remain_{}.jpg'.format(i)), (vis_heatmap_remain*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_heatmap_drop = torchvision.utils.make_grid(heatmap_drop, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_heatmap_drop_{}.jpg'.format(batch_idx), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_heatmap_drop_{}.jpg'.format(i)), (vis_heatmap_drop*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
             vis_select_channel = torchvision.utils.make_grid(select_channel, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_select_channel_{}.jpg'.format(batch_idx), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_select_channel_{}.jpg'.format(i)), (vis_select_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
             vis_all_channel = torchvision.utils.make_grid(all_channel, nrow=8, padding=2,normalize=True)
-            cv2.imwrite('visual/train_all_channel_{}.jpg'.format(batch_idx), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
+            cv2.imwrite(os.path.join(save_dir, 'train_all_channel_{}.jpg'.format(i)), (vis_all_channel*255).cpu().detach().numpy().transpose((1,2,0)).astype(np.uint8))
 
     train_acc = 100.*float(correct)/total
     train_loss = train_loss/(idx+1)

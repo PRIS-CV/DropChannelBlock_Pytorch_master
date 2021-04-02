@@ -12,9 +12,9 @@ class Flatten(nn.Module):
 
 class VGGBase(nn.Module):
 
-    def __init__(self, model_name, num_classes, pretrained=True):
+    def __init__(self, num_classes, pretrained=True, cdb_flag="none"):
         super(VGGBase, self).__init__()
-        self.vgg = vgg19_bn(pretrained=pretrained)
+        self.vgg = vgg19_bn(pretrained=pretrained, cdb_flag=cdb_flag)
         self.num_classes = num_classes
 
         self.cls = nn.Sequential(

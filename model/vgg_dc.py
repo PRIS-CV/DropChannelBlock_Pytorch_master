@@ -4,8 +4,9 @@ import torch.nn as nn
 
 class VGG(nn.Module):
 
-    def __init__(self, num_classes, features, init_weights=True):
+    def __init__(self, num_classes, features, cdb_flag, init_weights=True):
         super(VGG, self).__init__()
+        self.cdb_flag = cdb_flag
         self.features = features
         # self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         # self.cls = nn.Sequential(
@@ -107,21 +108,29 @@ class VGG(nn.Module):
     def forward(self, x):
         #[3,448,448]
         x = nn.Sequential(*list(self.features.children())[:7])(x) #[64,224,224]
-        # x = self.drop_channel_block(x) # add dc block v1
         x = nn.Sequential(*list(self.features.children())[7:14])(x) #[128,112,112]
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v2
+        ### add dc block v2 ###
+        if self.cdb_flag == "max_activation":
+            x, _, _, _, _, _ = self.drop_channel_block_s1(x)
+        elif self.cdb_flag == "bilinear_pooling":
+            x, _, _, _, _, _ = self.drop_channel_block_s2(x)
         x = nn.Sequential(*list(self.features.children())[14:27])(x) #[256,56,56]
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
+        ### add dc block v3 ###
+        if self.cdb_flag == "max_activation":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
+        elif self.cdb_flag == "bilinear_pooling":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
+        else:
+            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], [] 
         x = nn.Sequential(*list(self.features.children())[27:40])(x) #[512,28,28]
-        # x = self.drop_channel_block(x) # add dc block v4
         x = nn.Sequential(*list(self.features.children())[40:])(x) #[512,14,14]
-        # x = self.drop_channel_block(x) # add dc block v5
 
         x = self.avgpool(x) #[512,7,7]
         x = torch.flatten(x, 1)
         x = self.cls(x)
-        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
-        return x, [], [], [], [], []
+
+        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
+
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -161,16 +170,8 @@ cfgs = {
 }
 
 
-def vgg16(num_classes):
-    """VGG 16-layer model (configuration "D") with batch normalization
+def vgg19(num_classes, cdb_flag):
 
-    """
-    model = VGG(num_classes, make_layers(cfgs['D'], batch_norm=True))
-
-    return model
-
-def vgg19(num_classes):
-
-    model = VGG(num_classes, make_layers(cfgs['E'], batch_norm=True))
+    model = VGG(num_classes, make_layers(cfgs['E'], batch_norm=True), cdb_flag)
 
     return model

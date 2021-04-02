@@ -5,10 +5,7 @@ try:
 except ImportError:
     from torch.utils.model_zoo import load_url as load_state_dict_from_url
 
-__all__ = [
-    'VGG', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
-    'vgg19_bn', 'vgg19',
-]
+__all__ = ['vgg19_bn']
 
 
 model_urls = {
@@ -25,8 +22,9 @@ model_urls = {
 
 class VGG(nn.Module):
 
-    def __init__(self, features, num_classes=1000, init_weights=True):
+    def __init__(self, features, cdb_flag, num_classes=1000, init_weights=True):
         super(VGG, self).__init__()
+        self.cdb_flag = cdb_flag
         self.features = features
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         self.classifier = nn.Sequential(
@@ -127,19 +125,19 @@ class VGG(nn.Module):
     def forward(self, x):
         #[3,448,448]
         x = nn.Sequential(*list(self.features.children())[:7])(x) #[64,224,224]
-        # x = self.drop_channel_block(x) # add dc block v1
         x = nn.Sequential(*list(self.features.children())[7:14])(x) #[128,112,112]
-        # x = self.drop_channel_block(x) # add dc block v2
         x = nn.Sequential(*list(self.features.children())[14:27])(x) #[256,56,56]
-        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x) # add dc block v3
-        # x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x) # add dc block v3
+        ### add cdb block v3
+        if self.cdb_flag == "max_activation":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
+        elif self.cdb_flag == "bilinear_pooling":
+            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
+        else:
+            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], []
         x = nn.Sequential(*list(self.features.children())[27:40])(x) #[512,28,28]
-        # x = self.drop_channel_block(x) # add dc block v4
         x = nn.Sequential(*list(self.features.children())[40:])(x) #[512,14,14]
-        # x = self.drop_channel_block(x) # add dc block v5
 
-        # return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
-        return x, [], [], [], [], []
+        return x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -179,84 +177,20 @@ cfgs = {
 }
 
 
-def _vgg(arch, cfg, batch_norm, pretrained, progress, **kwargs):
+def _vgg(arch, cfg, batch_norm, pretrained, cdb_flag, progress, **kwargs):
     if pretrained:
         kwargs['init_weights'] = False
-    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)
+    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), cdb_flag, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
         model.load_state_dict(state_dict)
     return model
 
-
-def vgg11(pretrained=False, progress=True, **kwargs):
-    """VGG 11-layer model (configuration "A")
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg11', 'A', False, pretrained, progress, **kwargs)
-
-
-def vgg11_bn(pretrained=False, progress=True, **kwargs):
-    """VGG 11-layer model (configuration "A") with batch normalization
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg11_bn', 'A', True, pretrained, progress, **kwargs)
-
-
-def vgg13(pretrained=False, progress=True, **kwargs):
-    """VGG 13-layer model (configuration "B")
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg13', 'B', False, pretrained, progress, **kwargs)
-
-
-def vgg13_bn(pretrained=False, progress=True, **kwargs):
-    """VGG 13-layer model (configuration "B") with batch normalization
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg13_bn', 'B', True, pretrained, progress, **kwargs)
-
-
-def vgg16(pretrained=False, progress=True, **kwargs):
-    """VGG 16-layer model (configuration "D")
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg16', 'D', False, pretrained, progress, **kwargs)
-
-
-def vgg16_bn(pretrained=False, progress=True, **kwargs):
-    """VGG 16-layer model (configuration "D") with batch normalization
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg16_bn', 'D', True, pretrained, progress, **kwargs)
-
-
-def vgg19(pretrained=False, progress=True, **kwargs):
-    """VGG 19-layer model (configuration "E")
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg19', 'E', False, pretrained, progress, **kwargs)
-
-
-def vgg19_bn(pretrained=False, progress=True, **kwargs):
+def vgg19_bn(pretrained=False, cdb_flag="none", progress=True, **kwargs):
     """VGG 19-layer model (configuration 'E') with batch normalization
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    return _vgg('vgg19_bn', 'E', True, pretrained, progress, **kwargs)
+    return _vgg('vgg19_bn', 'E', True, pretrained, cdb_flag, progress, **kwargs)

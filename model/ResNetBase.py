@@ -12,9 +12,9 @@ class Flatten(nn.Module):
 
 class ResNetBase(nn.Module):
 
-    def __init__(self, model_name, num_classes, pretrained=True):
+    def __init__(self, num_classes, pretrained=True, cdb_flag="none"):
         super(ResNetBase, self).__init__()
-        self.resnet = resnet50(pretrained=pretrained)
+        self.resnet = resnet50(pretrained=pretrained, cdb_flag=cdb_flag)
         self.num_classes = num_classes
 
         self.cls = nn.Sequential(

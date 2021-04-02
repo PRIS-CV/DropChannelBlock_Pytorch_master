@@ -25,10 +25,12 @@ import cv2
 logging.basicConfig(level=logging.INFO)
 
 model_options = ['resnet50', 'vgg19']
+cdb_options = ['none', 'max_activation', 'bilinear_pooling']
 parser = argparse.ArgumentParser(description='PyTorch ResNet Baseline Training')
 # parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
 parser.add_argument('--exp_name', default='baseline_birds+', type=str, help='store name')
-parser.add_argument('--model', default='resnet50', type=str, choices=model_options)
+parser.add_argument('--model', default='resnet50', type=str, choices=model_options, help='backbone model')
+parser.add_argument('--cdb', default='none', type=str, choices=cdb_options, help='ChannelDropBlock strategy')
 parser.add_argument('--gpu', default='3', type=str, help='gpu')
 parser.add_argument('--seed', default=2020, type=int, help='seed')
 parser.add_argument('--visualize', action='store_true', default=False)
@@ -52,15 +54,16 @@ nb_epoch = 200
 # init_lr = 0.002
 PRINT_FREQ = 50
 
-try:
-    os.stat('visual')
-except:
-    os.makedirs('visual')
-save_dir = os.path.join('visual', args.exp_name)
-try:
-    os.stat(save_dir)
-except:
-    os.makedirs(save_dir)
+if args.visualize:
+    try:
+        os.stat('visual')
+    except:
+        os.makedirs('visual')
+    save_dir = os.path.join('visual', args.exp_name)
+    try:
+        os.stat(save_dir)
+    except:
+        os.makedirs(save_dir)
 
 try:
     os.stat(exp_dir)
@@ -99,10 +102,10 @@ transform_test = transforms.Compose([
     # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ])
 
-trainset    = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/train', transform=transform_train)
+trainset    = torchvision.datasets.ImageFolder(root='data/birds/train', transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True, num_workers=4)
 
-testset = torchvision.datasets.ImageFolder(root='/mnt/2/donggua/Birds2/test', transform=transform_test)
+testset = torchvision.datasets.ImageFolder(root='data/birds/test', transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=16, shuffle=False, num_workers=4)
 
 
@@ -113,11 +116,13 @@ from model.ResNetBase import ResNetBase
 from model.VGGBase import VGGBase
 if args.model == "resnet50":
     shutil.copy2(os.path.join('model', 'ResNetBase.py'), exp_dir)
-    net = ResNetBase(model_name="resnet50", num_classes=200, pretrained=True)
+    shutil.copy2(os.path.join('model', 'ResNet.py'), exp_dir)
+    net = ResNetBase(num_classes=200, pretrained=True, cdb_flag=args.cdb)
     init_lr = 0.002
 elif args.model == "vgg19":
     shutil.copy2(os.path.join('model', 'VGGBase.py'), exp_dir)
-    net = VGGBase(model_name="resnet50", num_classes=200, pretrained=True)
+    shutil.copy2(os.path.join('model', 'VGG.py'), exp_dir)
+    net = VGGBase(num_classes=200, pretrained=True, cdb_flag=args.cdb)
     init_lr = 0.02
 
 if use_cuda:
