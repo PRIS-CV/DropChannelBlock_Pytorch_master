@@ -106,7 +106,12 @@ class ResNet(nn.Module):
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
-        self.cdb_flag = cdb_flag
+        if cdb_flag == "max_activation":
+            self.cdb_metric = self.drop_channel_block_s1
+        elif cdb_flag == "bilinear_pooling":
+            self.cdb_metric = self.drop_channel_block_s2
+        else:
+            self.cdb_metric = lambda x: {x, [], [], [], [], []}
         self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
@@ -206,8 +211,8 @@ class ResNet(nn.Module):
             value = value[:,:,-1].view(bs, c, -1)
             mask = adjs < value # [bs, c, c]
 
-            # ## drop with threshold
-            # value = h * 0.2
+            # ### drop with threshold
+            # value = h * 0.4
             # mask = distances > value
 
             drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(distances.device).repeat(1,1,c).long()
@@ -220,7 +225,7 @@ class ResNet(nn.Module):
             x_drop = x* mask_drop
             x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
 
-            ## normalize: drop with fixed percentage
+            ### normalize: drop with fixed percentage
             x_out = x_remain / (1-drop_rate)
 
             # ### normalize: drop with threshold
@@ -243,12 +248,16 @@ class ResNet(nn.Module):
             x_norm = torch.nn.functional.normalize(x_norm, dim = 2)
             adjs = torch.bmm(x_norm, torch.transpose(x_norm, 1, 2))
 
-            # mask = adjs > drop_thr
-            ### drop function
+            
+            ### drop with fixed percentage
             topk = int(c*drop_rate)
             value, indices = torch.topk(adjs, topk, dim = 2) # [bs, c, c] -> [bs, c, topk]
             value = value[:,:,-1].view(bs, c, -1)
             mask = adjs < value # [bs, c, c]
+
+            # ### drop with threshold
+            # drop_thr = 0.6
+            # mask = adjs < drop_thr
             
             drop_index = torch.randint(low=0, high=c, size=(bs,1,1)).to(adjs.device).repeat(1,1,c).long()
             mask = torch.gather(mask, 1, drop_index).view(bs,-1,1,1).repeat(1,1,h,w).float() #[bs,c,h,w]
@@ -260,8 +269,13 @@ class ResNet(nn.Module):
             x_remain = x* mask_remain
             x_drop = x* mask_drop
             x_select_channel = torch.gather(x, 1, drop_index[:,:,0].view(bs,1,1,1).repeat(1,1,h,w))
-            ### normalize
+
+            ### normalize: drop with fixed percentage
             x_out = x_remain / (1-drop_rate)
+
+            # ### normalize: drop with threshold
+            # remain_rate = torch.sum(mask_remain) / (bs*c*h*w)
+            # x_out = x_remain / remain_rate
 
             return x_out, torch.sum(x, dim=1, keepdim=True), torch.sum(x_remain, dim=1, keepdim=True), torch.sum(x_drop, dim=1, keepdim=True), x_select_channel, x[0].unsqueeze(1)
         else:
@@ -276,18 +290,10 @@ class ResNet(nn.Module):
         
         x = self.layer1(x) #256
         # add dc block v2
-        if self.cdb_flag == "max_activation":
-            x, _, _, _, _, _ = self.drop_channel_block_s1(x)
-        elif self.cdb_flag == "bilinear_pooling":
-            x, _, _, _, _, _ = self.drop_channel_block_s2(x)
-        x = self.layer2(x) #512 
+        x, _, _, _, _, _ = self.cdb_metric(x)
+        x = self.layer2(x) #512
         # add dc block v3
-        if self.cdb_flag == "max_activation":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
-        elif self.cdb_flag == "bilinear_pooling":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
-        else:
-            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], []
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.cdb_metric(x)
         x = self.layer3(x) #1024
         x = self.layer4(x) #2048
 

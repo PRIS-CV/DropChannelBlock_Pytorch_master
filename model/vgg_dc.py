@@ -6,7 +6,12 @@ class VGG(nn.Module):
 
     def __init__(self, num_classes, features, cdb_flag, init_weights=True):
         super(VGG, self).__init__()
-        self.cdb_flag = cdb_flag
+        if cdb_flag == "max_activation":
+            self.cdb_metric = self.drop_channel_block_s1
+        elif cdb_flag == "bilinear_pooling":
+            self.cdb_metric = self.drop_channel_block_s2
+        else:
+            self.cdb_metric = lambda x: {x, [], [], [], [], []}
         self.features = features
         # self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         # self.cls = nn.Sequential(
@@ -110,18 +115,10 @@ class VGG(nn.Module):
         x = nn.Sequential(*list(self.features.children())[:7])(x) #[64,224,224]
         x = nn.Sequential(*list(self.features.children())[7:14])(x) #[128,112,112]
         ### add dc block v2 ###
-        if self.cdb_flag == "max_activation":
-            x, _, _, _, _, _ = self.drop_channel_block_s1(x)
-        elif self.cdb_flag == "bilinear_pooling":
-            x, _, _, _, _, _ = self.drop_channel_block_s2(x)
+        x, _, _, _, _, _ = self.cdb_metric(x)
         x = nn.Sequential(*list(self.features.children())[14:27])(x) #[256,56,56]
         ### add dc block v3 ###
-        if self.cdb_flag == "max_activation":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
-        elif self.cdb_flag == "bilinear_pooling":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
-        else:
-            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], [] 
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.cdb_metric(x)
         x = nn.Sequential(*list(self.features.children())[27:40])(x) #[512,28,28]
         x = nn.Sequential(*list(self.features.children())[40:])(x) #[512,14,14]
 

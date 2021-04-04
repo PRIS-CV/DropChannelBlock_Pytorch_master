@@ -123,7 +123,12 @@ class ResNet(nn.Module):
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
-        self.cdb_flag = cdb_flag
+        if cdb_flag == "max_activation":
+            self.cdb_metric = self.drop_channel_block_s1
+        elif cdb_flag == "bilinear_pooling":
+            self.cdb_metric = self.drop_channel_block_s2
+        else:
+            self.cdb_metric = lambda x: {x, [], [], [], [], []}
         self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
@@ -283,12 +288,7 @@ class ResNet(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         ### add cdb block v3
-        if self.cdb_flag == "max_activation":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s1(x)
-        elif self.cdb_flag == "bilinear_pooling":
-            x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.drop_channel_block_s2(x)
-        else:
-            heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = [], [], [], [], []
+        x, heatmap_all, heatmap_remain, heatmap_drop, select_channel, all_channel = self.cdb_metric(x)
         x = self.layer3(x)
         x = self.layer4(x)
 
