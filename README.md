@@ -1,7 +1,8 @@
 # ChannelDropBlock_Pytorch
+Code release for the paper "Channel DropBlock: An Improved Regularization Method for Fine-Grained Visual Classification" (BMVC2021).
 
 ### Dependencies:
-Python 3.6vwith all of the `pip install -r requirements.txt` packages including:
+Python 3.6 with all of the `pip install -r requirements.txt` packages including:
 - `torch == 1.3.1`
 - `opencv-python`
 
